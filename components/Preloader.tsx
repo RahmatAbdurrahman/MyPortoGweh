@@ -12,7 +12,7 @@ gsap.registerPlugin()
 
 export default function Preloader({ onComplete }: PreloaderProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const counterRef = useRef<HTMLSpanElement>(null)
+  const counterRef = useRef<HTMLDivElement>(null)
   const fillRef = useRef<HTMLDivElement>(null)
   const textCharsRef = useRef<HTMLSpanElement[]>([])
   const [counter, setCounter] = useState(0)
