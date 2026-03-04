@@ -69,6 +69,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
   const [audioLevel, setAudioLevel] = useState(0)
   const animFrameRef = useRef<number>(0)
 
+  // Expose to global context
   useEffect(() => {
     ;(window as any).__imperialVideoRef = iframeRef
     ;(window as any).__imperialToggleMute = toggleMute
@@ -92,12 +93,11 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     return () => cancelAnimationFrame(animFrameRef.current)
   }, [isMuted])
 
-  // FUNGSI TOGGLE MUTE STANDARD (Dari tombol toggle)
+  // FUNGSI TOGGLE KLIK MANUAL
   const toggleMute = () => {
     if (!iframeRef.current || !iframeRef.current.contentWindow) return
     
     if (isMuted) {
-      // Pastikan kirim setVolume 100 juga biar suaranya kedengeran
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
       setIsMuted(false)
@@ -109,25 +109,49 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     }
   }
 
-  // JURUS BRUTE FORCE: Nangkap sinyal dari VideoGate
+  // JURUS 1: NANGKAP PROP DARI PARENT (Kalau VideoPlayer baru di-render setelah klik)
+  useEffect(() => {
+    if (startUnmuted && iframeRef.current) {
+      setIsMuted(false);
+      window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
+      
+      // Tembakan brutal selama 3 detik!
+      let attempts = 0;
+      const forceInterval = setInterval(() => {
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+        }
+        attempts++;
+        if (attempts > 10) clearInterval(forceInterval);
+      }, 300);
+    }
+  }, [startUnmuted]);
+
+  // JURUS 2: NANGKAP EVENT DARI VIDEOGATE (Kalau VideoPlayer udah standby di belakang)
   useEffect(() => {
     const handleAutoStart = () => {
-      // 1. Langsung update UI biar indikatornya jadi ON
       if (isMuted) {
         setIsMuted(false);
         window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
       }
 
+      // Tembakan sinkron detik itu juga
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [200] }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+      }
+
+      // Tembakan brutal selama 3 detik!
       let attempts = 0;
-      const forceAudio = setInterval(() => {
+      const forceInterval = setInterval(() => {
         if (iframeRef.current?.contentWindow) {
           iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
           iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
-          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
         }
         attempts++;
-        if (attempts >= 8) clearInterval(forceAudio); // Berhenti setelah ~3 detik
-      }, 400);
+        if (attempts > 10) clearInterval(forceInterval);
+      }, 300);
     };
 
     window.addEventListener('imperial-autostart-unmuted', handleAutoStart);
