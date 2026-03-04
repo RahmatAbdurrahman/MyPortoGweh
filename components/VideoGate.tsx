@@ -4,7 +4,6 @@ import { useRef, useEffect, useState } from 'react'
 import { gsap } from 'gsap'
 
 interface VideoGateProps {
-  /** Called when user makes a choice. true = unmute, false = muted */
   onChoice: (unmuted: boolean) => void
 }
 
@@ -46,12 +45,8 @@ export default function VideoGate({ onChoice }: VideoGateProps) {
     if (isExiting) return
     setIsExiting(true)
 
-    // 🔥 EKSEKUSI LANGSUNG DI SINI! (Bypass blokir Autoplay Browser)
-    // Sinyal dikirim detik ini juga ke parent/page.tsx
     onChoice(unmuted)
 
-    // 🔥 TAMBAHAN WAJIB BUAT YOUTUBE IFRAME:
-    // Tembak sinyal ke VideoPlayer detik ini juga biar YouTube langsung unmute!
     if (unmuted && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('imperial-autostart-unmuted'))
     }

@@ -196,7 +196,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
             ref={iframeRef}
             className="absolute top-1/2 left-1/2 w-[100vw] h-[56.25vw] min-h-[100%] min-w-[177.77%] -translate-x-1/2 -translate-y-1/2"
             // JANGAN LUPA GANTI "ID_VIDEO_LU" DENGAN ID YOUTUBE LU!
-            src="https://www.youtube.com/embed/ID_VIDEO_LU?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&loop=1&playlist=ID_VIDEO_LU&modestbranding=1&enablejsapi=1"
+            src="https://youtu.be/3d5BvyOkJs8?si=lMKkS7U754RfOuTD"
             title="Imperial Background Video"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
