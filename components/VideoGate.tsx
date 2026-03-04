@@ -47,8 +47,14 @@ export default function VideoGate({ onChoice }: VideoGateProps) {
     setIsExiting(true)
 
     // 🔥 EKSEKUSI LANGSUNG DI SINI! (Bypass blokir Autoplay Browser)
-    // Sinyal dikirim detik ini juga ke parent/VideoPlayer, jangan nunggu animasi beres!
+    // Sinyal dikirim detik ini juga ke parent/page.tsx
     onChoice(unmuted)
+
+    // 🔥 TAMBAHAN WAJIB BUAT YOUTUBE IFRAME:
+    // Tembak sinyal ke VideoPlayer detik ini juga biar YouTube langsung unmute!
+    if (unmuted && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('imperial-autostart-unmuted'))
+    }
 
     // Mulai animasi kehancuran gerbang (tanpa menunda audio)
     const tl = gsap.timeline()

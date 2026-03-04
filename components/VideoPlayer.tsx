@@ -7,14 +7,14 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
 gsap.registerPlugin(ScrollTrigger)
 
-// ─── Shared audio context so SoundToggle widget can control same video ───────
+// ─── Shared audio context (Diperbarui untuk mendukung Iframe) ─────────────────
 export const VideoAudioContext = createContext<{
-  videoRef: React.RefObject<HTMLVideoElement> | null
+  mediaRef: React.RefObject<HTMLIFrameElement> | null // Ubah tipe dari Video ke Iframe
   isMuted: boolean
   audioLevel: number
   toggle: () => void
 }>({
-  videoRef: null,
+  mediaRef: null,
   isMuted: true,
   audioLevel: 0,
   toggle: () => {},
@@ -39,7 +39,6 @@ function VisualizerBars({
     const animate = () => {
       barsRef.current.forEach((bar, i) => {
         if (!bar) return
-        // Create organic wave across bars using sine + audio level
         const wave = Math.sin(Date.now() * 0.003 + i * 0.4) * 0.5 + 0.5
         const bass = Math.sin(Date.now() * 0.006 + i * 0.2) * 0.3 + 0.3
         const height = 4 + wave * (audioLevel * 0.8) + bass * (audioLevel * 0.4)
@@ -70,7 +69,6 @@ function VisualizerBars({
           }}
         />
       ))}
-      {/* Gradient fade at bottom */}
       <div
         className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
         style={{
@@ -82,86 +80,72 @@ function VisualizerBars({
 }
 
 // ─── Main VideoPlayer SECTION ─────────────────────────────────────────────────
-// 🔥 PERBAIKAN: Tambahkan interface untuk menerima prop startUnmuted
 interface VideoPlayerProps {
   startUnmuted?: boolean;
 }
 
 export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) {
   const sectionRef = useRef<HTMLElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const overlayRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null) // Pakai Iframe sekarang!
   const headingRef = useRef<HTMLDivElement>(null)
 
   const [isMuted, setIsMuted] = useState(true)
   const [audioLevel, setAudioLevel] = useState(0)
-  const analyserRef = useRef<AnalyserNode | null>(null)
   const animFrameRef = useRef<number>(0)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const dataArrayRef = useRef<Uint8Array | null>(null)
 
-  // Expose to global context so the fixed SoundToggle widget works
+  // Expose to global context
   useEffect(() => {
-    // Attach refs to window for cross-component access
-    ;(window as any).__imperialVideoRef = videoRef
+    ;(window as any).__imperialVideoRef = iframeRef
     ;(window as any).__imperialToggleMute = toggleMute
   })
 
-  const setupAudioAnalyser = () => {
-    if (!videoRef.current || audioCtxRef.current) return
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const source = ctx.createMediaElementSource(videoRef.current)
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 512
-    source.connect(analyser)
-    analyser.connect(ctx.destination)
-    audioCtxRef.current = ctx
-    analyserRef.current = analyser
-    dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount)
-
-    const tick = () => {
-      if (!analyserRef.current || !dataArrayRef.current) return
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current as any)      
-      const avg = dataArrayRef.current.reduce((a, b) => a + b, 0) / dataArrayRef.current.length
-      setAudioLevel(avg)
-      animFrameRef.current = requestAnimationFrame(tick)
+  // FAKE AUDIO ANALYSER (Karena YouTube ngeblokir Web Audio API)
+  useEffect(() => {
+    if (isMuted) {
+      setAudioLevel(0)
+      cancelAnimationFrame(animFrameRef.current)
+      return
     }
-    tick()
-  }
+
+    const generateFakeAudio = () => {
+      // Bikin level audio buatan yang kelihatan natural pake gelombang sinus
+      const time = Date.now() * 0.002
+      const bass = (Math.sin(time) * 0.5 + 0.5) * 40
+      const treble = Math.random() * 20
+      setAudioLevel(bass + treble + 10) 
+      animFrameRef.current = requestAnimationFrame(generateFakeAudio)
+    }
+    generateFakeAudio()
+
+    return () => cancelAnimationFrame(animFrameRef.current)
+  }, [isMuted])
 
   const toggleMute = () => {
-    if (!videoRef.current) return
+    if (!iframeRef.current || !iframeRef.current.contentWindow) return
+    
+    // Kirim sinyal postMessage ke Iframe YouTube (wajib ada enablejsapi=1 di URL)
     if (isMuted) {
-      videoRef.current.muted = false
-      videoRef.current.volume = 0.5
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
       setIsMuted(false)
-      setupAudioAnalyser()
-      // Dispatch event for SoundToggle widget
       window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }))
     } else {
-      videoRef.current.muted = true
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'mute', args: [] }), '*')
       setIsMuted(true)
       window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: true } }))
     }
   }
 
-  // 🔥 PERBAIKAN: Jalankan unmuting seketika saat komponen di-render jika startUnmuted true
   useEffect(() => {
-    if (startUnmuted && videoRef.current) {
-      videoRef.current.muted = false;
-      videoRef.current.volume = 0.5;
-      setIsMuted(false);
-      
-      // Setup analyser sedikit didelay agar DOM video siap sepenuhnya
+    if (startUnmuted && iframeRef.current) {
       setTimeout(() => {
-        setupAudioAnalyser();
-        // Beritahu widget SoundToggle kalau audio sudah menyala
+        if (!iframeRef.current?.contentWindow) return
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
+        setIsMuted(false);
         window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
-      }, 50);
+      }, 500); // Kasih delay dikit biar iframe YouTube kelar loading
     }
   }, [startUnmuted]);
 
-  // 🔥 PERBAIKAN: Menangkap custom event dari page.tsx (opsional sebagai fallback)
   useEffect(() => {
     const handleAutoStart = () => {
       if (isMuted) toggleMute();
@@ -170,38 +154,21 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     return () => window.removeEventListener('imperial-autostart-unmuted', handleAutoStart);
   }, [isMuted]);
 
-  // GSAP: section heading reveal
   useGSAP(() => {
     gsap.fromTo(
       headingRef.current,
       { y: 40, opacity: 0 },
       {
-        y: 0,
-        opacity: 1,
-        duration: 1.2,
-        ease: 'power3.out',
-        scrollTrigger: {
-          trigger: sectionRef.current,
-          start: 'top 75%',
-          once: true,
-        },
+        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
+        scrollTrigger: { trigger: sectionRef.current, start: 'top 75%', once: true },
       }
     )
   }, { scope: sectionRef })
 
-  // Dynamic glow intensity
   const glowIntensity = Math.min(audioLevel / 55, 1)
-
-  useEffect(() => {
-    return () => {
-      cancelAnimationFrame(animFrameRef.current)
-      audioCtxRef.current?.close()
-    }
-  }, [])
 
   return (
     <section ref={sectionRef} id="showreel" className="px-[5vw] py-[10vh]">
-      {/* Section header */}
       <div ref={headingRef} className="mb-10" style={{ opacity: 0 }}>
         <div className="section-eyebrow">Imperial Showreel</div>
         <h2 className="section-title">
@@ -210,7 +177,6 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
         </h2>
       </div>
 
-      {/* Video container — full width, cinematic ratio */}
       <div
         className="relative w-full overflow-hidden"
         style={{
@@ -221,51 +187,47 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
             ? '0 0 60px rgba(10,10,11,0.8)'
             : `0 0 ${60 + glowIntensity * 80}px rgba(192,39,45,${0.2 + glowIntensity * 0.4}), 0 0 ${30 + glowIntensity * 40}px rgba(201,168,76,${0.1 + glowIntensity * 0.2}), inset 0 0 ${20 + glowIntensity * 30}px rgba(192,39,45,${glowIntensity * 0.1})`,
           transition: 'box-shadow 0.15s ease',
+          backgroundColor: '#050203'
         }}
       >
-        {/* Video element */}
-        <video
-          ref={videoRef}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        >
-          <source src="/video/imperial-theme.mp4" type="video/mp4" />
-        </video>
+        {/* YOUTUBE IFRAME (Pengganti tag <video>) */}
+        <div className="absolute inset-0 w-full h-full pointer-events-none z-0">
+          <iframe
+            ref={iframeRef}
+            className="absolute top-1/2 left-1/2 w-[100vw] h-[56.25vw] min-h-[100%] min-w-[177.77%] -translate-x-1/2 -translate-y-1/2"
+            // JANGAN LUPA GANTI "ID_VIDEO_LU" DENGAN ID YOUTUBE LU!
+            src="https://www.youtube.com/embed/ID_VIDEO_LU?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&loop=1&playlist=ID_VIDEO_LU&modestbranding=1&enablejsapi=1"
+            title="Imperial Background Video"
+            frameBorder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          ></iframe>
+        </div>
 
-        {/* Fallback gradient when no video file */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none"
           style={{
-            background:
-              'linear-gradient(135deg, rgba(192,39,45,0.25) 0%, rgba(10,10,11,0.95) 45%, rgba(201,168,76,0.15) 100%)',
+            background: 'linear-gradient(135deg, rgba(192,39,45,0.25) 0%, rgba(10,10,11,0.85) 45%, rgba(201,168,76,0.15) 100%)',
             zIndex: 0,
           }}
         />
 
-        {/* Scan-line overlay for cinematic feel */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            backgroundImage:
-              'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
+            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
             zIndex: 1,
           }}
         />
 
-        {/* Vignette */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
-            background:
-              'radial-gradient(ellipse at center, transparent 40%, rgba(10,10,11,0.7) 100%)',
+            background: 'radial-gradient(ellipse at center, transparent 30%, rgba(10,10,11,0.8) 100%)',
             zIndex: 2,
           }}
         />
 
-        {/* Audio-reactive aura on border */}
         {!isMuted && (
           <div
             className="absolute inset-0 pointer-events-none rounded"
@@ -276,14 +238,9 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
           />
         )}
 
-        {/* Visualizer bars at the bottom */}
         <VisualizerBars audioLevel={isMuted ? 0 : audioLevel} count={56} />
 
-        {/* Center play indicator / branding */}
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
-          style={{ zIndex: 5 }}
-        >
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 5 }}>
           {isMuted && (
             <div className="flex flex-col items-center gap-3 opacity-60">
               <div
@@ -297,37 +254,24 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
               >
                 Sound Off — Click to Unmute
               </div>
-              <div
-                style={{
-                  width: '40px',
-                  height: '1px',
-                  background: 'rgba(201,168,76,0.4)',
-                }}
-              />
+              <div style={{ width: '40px', height: '1px', background: 'rgba(201,168,76,0.4)' }} />
             </div>
           )}
         </div>
 
-        {/* Click-to-unmute overlay (entire video area) */}
         <button
           onClick={toggleMute}
           className="absolute inset-0 w-full h-full"
-          style={{
-            background: 'transparent',
-            zIndex: 6,
-            cursor: 'none',
-          }}
+          style={{ background: 'transparent', zIndex: 6, cursor: 'none' }}
           aria-label={isMuted ? 'Unmute video' : 'Mute video'}
         />
 
-        {/* Corner decoration */}
         <div className="corner-decoration tl" style={{ zIndex: 7 }} />
         <div className="corner-decoration tr" style={{ zIndex: 7 }} />
         <div className="corner-decoration bl" style={{ zIndex: 7 }} />
         <div className="corner-decoration br" style={{ zIndex: 7 }} />
       </div>
 
-      {/* Caption below video */}
       <div className="flex items-center justify-between mt-4 px-1">
         <p
           style={{
