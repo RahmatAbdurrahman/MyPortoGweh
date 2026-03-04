@@ -9,7 +9,7 @@ gsap.registerPlugin(ScrollTrigger)
 
 // ─── Shared audio context (Diperbarui untuk mendukung Iframe) ─────────────────
 export const VideoAudioContext = createContext<{
-  mediaRef: React.RefObject<HTMLIFrameElement> | null // Ubah tipe dari Video ke Iframe
+  mediaRef: React.RefObject<HTMLIFrameElement> | null
   isMuted: boolean
   audioLevel: number
   toggle: () => void
@@ -86,7 +86,7 @@ interface VideoPlayerProps {
 
 export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) {
   const sectionRef = useRef<HTMLElement>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null) // Pakai Iframe sekarang!
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const headingRef = useRef<HTMLDivElement>(null)
 
   const [isMuted, setIsMuted] = useState(true)
@@ -99,7 +99,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     ;(window as any).__imperialToggleMute = toggleMute
   })
 
-  // FAKE AUDIO ANALYSER (Karena YouTube ngeblokir Web Audio API)
+  // FAKE AUDIO ANALYSER
   useEffect(() => {
     if (isMuted) {
       setAudioLevel(0)
@@ -108,7 +108,6 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     }
 
     const generateFakeAudio = () => {
-      // Bikin level audio buatan yang kelihatan natural pake gelombang sinus
       const time = Date.now() * 0.002
       const bass = (Math.sin(time) * 0.5 + 0.5) * 40
       const treble = Math.random() * 20
@@ -123,7 +122,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
   const toggleMute = () => {
     if (!iframeRef.current || !iframeRef.current.contentWindow) return
     
-    // Kirim sinyal postMessage ke Iframe YouTube (wajib ada enablejsapi=1 di URL)
+    // Sinyal ini cuma jalan kalau ada enablejsapi=1 di URL
     if (isMuted) {
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
       setIsMuted(false)
@@ -142,7 +141,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
         iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
         setIsMuted(false);
         window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
-      }, 500); // Kasih delay dikit biar iframe YouTube kelar loading
+      }, 500);
     }
   }, [startUnmuted]);
 
@@ -190,13 +189,11 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
           backgroundColor: '#050203'
         }}
       >
-        {/* YOUTUBE IFRAME (Pengganti tag <video>) */}
         <div className="absolute inset-0 w-full h-full pointer-events-none z-0">
           <iframe
             ref={iframeRef}
             className="absolute top-1/2 left-1/2 w-[100vw] h-[56.25vw] min-h-[100%] min-w-[177.77%] -translate-x-1/2 -translate-y-1/2"
-            // JANGAN LUPA GANTI "ID_VIDEO_LU" DENGAN ID YOUTUBE LU!
-            src="https://youtu.be/3d5BvyOkJs8?si=lMKkS7U754RfOuTD"
+            src="https://www.youtube.com/embed/3d5BvyOkJs8?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&loop=1&playlist=3d5BvyOkJs8&modestbranding=1&enablejsapi=1"
             title="Imperial Background Video"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
