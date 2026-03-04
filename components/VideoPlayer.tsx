@@ -7,7 +7,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
 gsap.registerPlugin(ScrollTrigger)
 
-// ─── Shared audio context (Diperbarui untuk mendukung Iframe) ─────────────────
+// ─── Shared audio context ─────────────────────────────────────────────────────
 export const VideoAudioContext = createContext<{
   mediaRef: React.RefObject<HTMLIFrameElement> | null
   isMuted: boolean
@@ -25,13 +25,7 @@ export function useVideoAudio() {
 }
 
 // ─── Visualizer bar component ─────────────────────────────────────────────────
-function VisualizerBars({
-  audioLevel,
-  count = 48,
-}: {
-  audioLevel: number
-  count?: number
-}) {
+function VisualizerBars({ audioLevel, count = 48 }: { audioLevel: number; count?: number }) {
   const barsRef = useRef<(HTMLDivElement | null)[]>([])
   const frameRef = useRef<number>(0)
 
@@ -52,29 +46,11 @@ function VisualizerBars({
   }, [audioLevel])
 
   return (
-    <div
-      className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-[3px] px-8 pb-0"
-      style={{ height: '100px', zIndex: 4 }}
-    >
+    <div className="absolute bottom-0 left-0 right-0 flex items-end justify-center gap-[3px] px-8 pb-0" style={{ height: '100px', zIndex: 4 }}>
       {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          ref={(el) => { barsRef.current[i] = el }}
-          style={{
-            width: '3px',
-            height: '4px',
-            background: i % 3 === 0 ? 'var(--accent-gold)' : 'rgba(201,168,76,0.5)',
-            borderRadius: '1px 1px 0 0',
-            transition: 'height 0.04s ease, opacity 0.04s ease',
-          }}
-        />
+        <div key={i} ref={(el) => { barsRef.current[i] = el }} style={{ width: '3px', height: '4px', background: i % 3 === 0 ? 'var(--accent-gold)' : 'rgba(201,168,76,0.5)', borderRadius: '1px 1px 0 0', transition: 'height 0.04s ease, opacity 0.04s ease' }} />
       ))}
-      <div
-        className="absolute inset-x-0 bottom-0 h-16 pointer-events-none"
-        style={{
-          background: 'linear-gradient(to top, rgba(10,10,11,0.8), transparent)',
-        }}
-      />
+      <div className="absolute inset-x-0 bottom-0 h-16 pointer-events-none" style={{ background: 'linear-gradient(to top, rgba(10,10,11,0.8), transparent)' }} />
     </div>
   )
 }
@@ -93,20 +69,18 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
   const [audioLevel, setAudioLevel] = useState(0)
   const animFrameRef = useRef<number>(0)
 
-  // Expose to global context
   useEffect(() => {
     ;(window as any).__imperialVideoRef = iframeRef
     ;(window as any).__imperialToggleMute = toggleMute
   })
 
-  // FAKE AUDIO ANALYSER
+  // FAKE AUDIO ANALYSER 
   useEffect(() => {
     if (isMuted) {
       setAudioLevel(0)
       cancelAnimationFrame(animFrameRef.current)
       return
     }
-
     const generateFakeAudio = () => {
       const time = Date.now() * 0.002
       const bass = (Math.sin(time) * 0.5 + 0.5) * 40
@@ -115,15 +89,16 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
       animFrameRef.current = requestAnimationFrame(generateFakeAudio)
     }
     generateFakeAudio()
-
     return () => cancelAnimationFrame(animFrameRef.current)
   }, [isMuted])
 
+  // FUNGSI TOGGLE MUTE STANDARD (Dari tombol toggle)
   const toggleMute = () => {
     if (!iframeRef.current || !iframeRef.current.contentWindow) return
     
-    // Sinyal ini cuma jalan kalau ada enablejsapi=1 di URL
     if (isMuted) {
+      // Pastikan kirim setVolume 100 juga biar suaranya kedengeran
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*')
       iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
       setIsMuted(false)
       window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }))
@@ -134,21 +109,27 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     }
   }
 
-  useEffect(() => {
-    if (startUnmuted && iframeRef.current) {
-      setTimeout(() => {
-        if (!iframeRef.current?.contentWindow) return
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*')
-        setIsMuted(false);
-        window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
-      }, 500);
-    }
-  }, [startUnmuted]);
-
+  // JURUS BRUTE FORCE: Nangkap sinyal dari VideoGate
   useEffect(() => {
     const handleAutoStart = () => {
-      if (isMuted) toggleMute();
+      // 1. Langsung update UI biar indikatornya jadi ON
+      if (isMuted) {
+        setIsMuted(false);
+        window.dispatchEvent(new CustomEvent('imperial-mute-change', { detail: { muted: false } }));
+      }
+
+      let attempts = 0;
+      const forceAudio = setInterval(() => {
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+        }
+        attempts++;
+        if (attempts >= 8) clearInterval(forceAudio); // Berhenti setelah ~3 detik
+      }, 400);
     };
+
     window.addEventListener('imperial-autostart-unmuted', handleAutoStart);
     return () => window.removeEventListener('imperial-autostart-unmuted', handleAutoStart);
   }, [isMuted]);
@@ -157,10 +138,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
     gsap.fromTo(
       headingRef.current,
       { y: 40, opacity: 0 },
-      {
-        y: 0, opacity: 1, duration: 1.2, ease: 'power3.out',
-        scrollTrigger: { trigger: sectionRef.current, start: 'top 75%', once: true },
-      }
+      { y: 0, opacity: 1, duration: 1.2, ease: 'power3.out', scrollTrigger: { trigger: sectionRef.current, start: 'top 75%', once: true } }
     )
   }, { scope: sectionRef })
 
@@ -201,38 +179,12 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
           ></iframe>
         </div>
 
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: 'linear-gradient(135deg, rgba(192,39,45,0.25) 0%, rgba(10,10,11,0.85) 45%, rgba(201,168,76,0.15) 100%)',
-            zIndex: 0,
-          }}
-        />
-
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)',
-            zIndex: 1,
-          }}
-        />
-
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: 'radial-gradient(ellipse at center, transparent 30%, rgba(10,10,11,0.8) 100%)',
-            zIndex: 2,
-          }}
-        />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg, rgba(192,39,45,0.25) 0%, rgba(10,10,11,0.85) 45%, rgba(201,168,76,0.15) 100%)', zIndex: 0 }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px)', zIndex: 1 }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at center, transparent 30%, rgba(10,10,11,0.8) 100%)', zIndex: 2 }} />
 
         {!isMuted && (
-          <div
-            className="absolute inset-0 pointer-events-none rounded"
-            style={{
-              boxShadow: `inset 0 0 ${30 + glowIntensity * 60}px rgba(192,39,45,${glowIntensity * 0.3})`,
-              zIndex: 3,
-            }}
-          />
+          <div className="absolute inset-0 pointer-events-none rounded" style={{ boxShadow: `inset 0 0 ${30 + glowIntensity * 60}px rgba(192,39,45,${glowIntensity * 0.3})`, zIndex: 3 }} />
         )}
 
         <VisualizerBars audioLevel={isMuted ? 0 : audioLevel} count={56} />
@@ -240,15 +192,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 5 }}>
           {isMuted && (
             <div className="flex flex-col items-center gap-3 opacity-60">
-              <div
-                style={{
-                  fontFamily: 'var(--font-cinzel)',
-                  fontSize: 'clamp(0.6rem, 1.5vw, 0.8rem)',
-                  letterSpacing: '0.4em',
-                  color: 'var(--accent-gold)',
-                  textTransform: 'uppercase',
-                }}
-              >
+              <div style={{ fontFamily: 'var(--font-cinzel)', fontSize: 'clamp(0.6rem, 1.5vw, 0.8rem)', letterSpacing: '0.4em', color: 'var(--accent-gold)', textTransform: 'uppercase' }}>
                 Sound Off — Click to Unmute
               </div>
               <div style={{ width: '40px', height: '1px', background: 'rgba(201,168,76,0.4)' }} />
@@ -256,12 +200,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
           )}
         </div>
 
-        <button
-          onClick={toggleMute}
-          className="absolute inset-0 w-full h-full"
-          style={{ background: 'transparent', zIndex: 6, cursor: 'none' }}
-          aria-label={isMuted ? 'Unmute video' : 'Mute video'}
-        />
+        <button onClick={toggleMute} className="absolute inset-0 w-full h-full" style={{ background: 'transparent', zIndex: 6, cursor: 'none' }} aria-label={isMuted ? 'Unmute video' : 'Mute video'} />
 
         <div className="corner-decoration tl" style={{ zIndex: 7 }} />
         <div className="corner-decoration tr" style={{ zIndex: 7 }} />
@@ -270,15 +209,7 @@ export default function VideoPlayer({ startUnmuted = false }: VideoPlayerProps) 
       </div>
 
       <div className="flex items-center justify-between mt-4 px-1">
-        <p
-          style={{
-            fontFamily: 'var(--font-cinzel)',
-            fontSize: '0.6rem',
-            letterSpacing: '0.25em',
-            color: 'rgba(201,168,76,0.4)',
-            textTransform: 'uppercase',
-          }}
-        >
+        <p style={{ fontFamily: 'var(--font-cinzel)', fontSize: '0.6rem', letterSpacing: '0.25em', color: 'rgba(201,168,76,0.4)', textTransform: 'uppercase' }}>
           {isMuted ? '— Sound Off' : '— Sound On'}
         </p>
       </div>
